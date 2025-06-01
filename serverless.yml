@@ -1,0 +1,145 @@
+service: vivares-api
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'us-east-1'}
+  environment:
+    MONGODB_URI: ${ssm:/vivares/${self:provider.stage}/MONGODB_URI}
+    JWT_SECRET: ${ssm:/vivares/${self:provider.stage}/JWT_SECRET}
+    EMAIL_USER: ${ssm:/vivares/${self:provider.stage}/EMAIL_USER}
+    EMAIL_PASSWORD: ${ssm:/vivares/${self:provider.stage}/EMAIL_PASSWORD}
+    AWS_ACCESS_KEY_ID: ${ssm:/vivares/${self:provider.stage}/AWS_ACCESS_KEY_ID}
+    AWS_SECRET_ACCESS_KEY: ${ssm:/vivares/${self:provider.stage}/AWS_SECRET_ACCESS_KEY}
+    AWS_REGION: ${self:provider.region}
+    AWS_BUCKET_NAME: ${ssm:/vivares/${self:provider.stage}/AWS_BUCKET_NAME}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource: 
+            - !GetAtt UsersTable.Arn
+            - !GetAtt UsersTable.Arn/index/*
+            - !GetAtt PostsTable.Arn
+            - !GetAtt PostsTable.Arn/index/*
+            - !GetAtt PlacesTable.Arn
+            - !GetAtt BooksTable.Arn
+            - !GetAtt BooksTable.Arn/index/*
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+          Resource: 
+            - arn:aws:s3:::${self:provider.environment.AWS_BUCKET_NAME}/*
+            - arn:aws:s3:::${self:provider.environment.AWS_BUCKET_NAME}
+
+functions:
+  api:
+    handler: lambda.handler
+    events:
+      - http:
+          path: /api/{proxy+}
+          method: any
+          cors: true
+
+resources:
+  Resources:
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-users
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: EmailIndex
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    PostsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-posts
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: author
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: AuthorIndex
+            KeySchema:
+              - AttributeName: author
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    PlacesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-places
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    BooksTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-books
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: title
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: TitleIndex
+            KeySchema:
+              - AttributeName: title
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+plugins:
+  - serverless-offline
+  - serverless-dotenv-plugin
+  - serverless-dynamodb-local
+
+custom:
+  serverless-offline:
+    httpPort: 3000
+  dynamodb:
+    stages:
+      - dev
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true 

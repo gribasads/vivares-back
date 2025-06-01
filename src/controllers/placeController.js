@@ -4,16 +4,14 @@ const Place = require('../models/Places');
 exports.createPlace = async (req, res) => {
     try {
         const { name, needPayment } = req.body;
-        const images = req.files ? req.files.map(file => file.location) : [];
+        const image = req.file ? req.file.location : null;
 
-        const place = new Place({
-            id: Date.now().toString(),
+        const place = await Place.create({
             name,
-            image: images,
+            image,
             needPayment
         });
 
-        await place.save();
         res.status(201).json(place);
     } catch (error) {
         res.status(500).json({ message: 'Erro ao criar lugar', error: error.message });
@@ -23,7 +21,7 @@ exports.createPlace = async (req, res) => {
 // Buscar todos os lugares
 exports.getPlaces = async (req, res) => {
     try {
-        const places = await Place.find().sort({ name: 1 });
+        const places = await Place.findAll();
         res.json(places);
     } catch (error) {
         res.status(500).json({ message: 'Erro ao buscar lugares', error: error.message });
@@ -44,28 +42,27 @@ exports.getPlace = async (req, res) => {
         res.status(500).json({ message: 'Erro ao buscar lugar', error: error.message });
     }
 };
+
 // Atualizar um lugar
 exports.updatePlace = async (req, res) => {
     try {
         const { name, needPayment } = req.body;
+        const image = req.file ? req.file.location : undefined;
+
         const place = await Place.findById(req.params.id);
         
         if (!place) {
             return res.status(404).json({ message: 'Lugar não encontrado' });
         }
 
-        // Atualizar campos
-        if (name) place.name = name;
-        if (needPayment !== undefined) place.needPayment = needPayment;
-        
-        // Atualizar imagens se houver novas
-        if (req.files && req.files.length > 0) {
-            const newImages = req.files.map(file => file.location);
-            place.image = [...place.image, ...newImages];
-        }
+        const updates = {
+            name,
+            needPayment,
+            ...(image && { image })
+        };
 
-        await place.save();
-        res.json(place);
+        const updatedPlace = await Place.update(req.params.id, updates);
+        res.json(updatedPlace);
     } catch (error) {
         res.status(500).json({ message: 'Erro ao atualizar lugar', error: error.message });
     }
@@ -80,7 +77,7 @@ exports.deletePlace = async (req, res) => {
             return res.status(404).json({ message: 'Lugar não encontrado' });
         }
 
-        await place.deleteOne();
+        await Place.delete(req.params.id);
         res.json({ message: 'Lugar deletado com sucesso' });
     } catch (error) {
         res.status(500).json({ message: 'Erro ao deletar lugar', error: error.message });

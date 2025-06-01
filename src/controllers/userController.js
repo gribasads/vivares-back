@@ -17,13 +17,14 @@ exports.requestVerificationCode = async (req, res) => {
         }
 
         // Verificar se usuário já existe
-        let user = await User.findOne({ email });
+        let user = await User.findByEmail(email);
         
         if (!user) {
             // Criar novo usuário se não existir
-            user = new User({
+            user = await User.create({
                 email,
-                name: email.split('@')[0] // Usa a parte antes do @ como nome
+                name: email.split('@')[0], // Usa a parte antes do @ como nome
+                isVerified: false
             });
         }
 
@@ -32,12 +33,13 @@ exports.requestVerificationCode = async (req, res) => {
         const expiresAt = new Date();
         expiresAt.setMinutes(expiresAt.getMinutes() + 10); // Código válido por 10 minutos
 
-        // Salvar código no usuário
-        user.verificationCode = {
-            code,
-            expiresAt
-        };
-        await user.save();
+        // Atualizar usuário com o código
+        await User.update(user.id, {
+            verificationCode: {
+                code,
+                expiresAt: expiresAt.toISOString()
+            }
+        });
 
         // Enviar código por email
         const emailSent = await sendVerificationCode(email, code);
@@ -61,7 +63,7 @@ exports.verifyCode = async (req, res) => {
             return res.status(400).json({ message: 'Email e código são obrigatórios' });
         }
 
-        const user = await User.findOne({ email });
+        const user = await User.findByEmail(email);
         
         if (!user) {
             return res.status(404).json({ message: 'Usuário não encontrado' });
@@ -70,7 +72,7 @@ exports.verifyCode = async (req, res) => {
         // Verificar se o código existe e não expirou
         if (!user.verificationCode || 
             user.verificationCode.code !== code || 
-            user.verificationCode.expiresAt < new Date()) {
+            new Date(user.verificationCode.expiresAt) < new Date()) {
             return res.status(400).json({ message: 'Código inválido ou expirado' });
         }
 
@@ -79,7 +81,7 @@ exports.verifyCode = async (req, res) => {
             return res.json({
                 token: user.authToken,
                 user: {
-                    id: user._id,
+                    id: user.id,
                     name: user.name,
                     email: user.email
                 }
@@ -88,21 +90,22 @@ exports.verifyCode = async (req, res) => {
 
         // Gerar token JWT
         const token = jwt.sign(
-            { userId: user._id },
+            { userId: user.id },
             process.env.JWT_SECRET,
             { expiresIn: '100y' } // Token válido por 100 anos
         );
 
         // Atualizar usuário
-        user.isVerified = true;
-        user.authToken = token;
-        user.verificationCode = undefined; // Remover código usado
-        await user.save();
+        await User.update(user.id, {
+            isVerified: true,
+            authToken: token,
+            verificationCode: null
+        });
 
         res.json({
             token,
             user: {
-                id: user._id,
+                id: user.id,
                 name: user.name,
                 email: user.email
             }
@@ -121,21 +124,20 @@ exports.updateUserName = async (req, res) => {
             return res.status(400).json({ message: 'Email e nome são obrigatórios' });
         }
 
-        const user = await User.findOne({ email });
+        const user = await User.findByEmail(email);
         
         if (!user) {
             return res.status(404).json({ message: 'Usuário não encontrado' });
         }
 
-        user.name = name;
-        await user.save();
+        const updatedUser = await User.update(user.id, { name });
 
         res.json({
             message: 'Nome atualizado com sucesso',
             user: {
-                id: user._id,
-                name: user.name,
-                email: user.email
+                id: updatedUser.id,
+                name: updatedUser.name,
+                email: updatedUser.email
             }
         });
     } catch (error) {
@@ -146,7 +148,7 @@ exports.updateUserName = async (req, res) => {
 // Listar todos os usuários
 exports.getUsers = async (req, res) => {
     try {
-        const users = await User.find();
+        const users = await User.findAll();
         res.json(users);
     } catch (error) {
         res.status(500).json({ message: error.message });

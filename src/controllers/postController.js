@@ -6,13 +6,12 @@ exports.createPost = async (req, res) => {
     const { content } = req.body;
     const images = req.files ? req.files.map(file => file.location) : [];
 
-    const post = new Post({
+    const post = await Post.create({
       content,
       images,
-      author: req.user._id // Assumindo que você tem autenticação e o usuário está disponível em req.user
+      author: req.user.id // Assumindo que você tem autenticação e o usuário está disponível em req.user
     });
 
-    await post.save();
     res.status(201).json(post);
   } catch (error) {
     res.status(500).json({ message: 'Erro ao criar post', error: error.message });
@@ -22,9 +21,7 @@ exports.createPost = async (req, res) => {
 // Buscar todos os posts
 exports.getPosts = async (req, res) => {
   try {
-    const posts = await Post.find()
-      .populate('author', 'name email')
-      .sort({ createdAt: -1 });
+    const posts = await Post.findAll();
     res.json(posts);
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar posts', error: error.message });
@@ -34,8 +31,7 @@ exports.getPosts = async (req, res) => {
 // Buscar um post específico
 exports.getPost = async (req, res) => {
   try {
-    const post = await Post.findById(req.params.id)
-      .populate('author', 'name email');
+    const post = await Post.findById(req.params.id);
     
     if (!post) {
       return res.status(404).json({ message: 'Post não encontrado' });
@@ -51,7 +47,7 @@ exports.getPost = async (req, res) => {
 exports.updatePost = async (req, res) => {
   try {
     const { content } = req.body;
-    const images = req.files ? req.files.map(file => file.location) : [];
+    const images = req.files ? req.files.map(file => file.location) : undefined;
 
     const post = await Post.findById(req.params.id);
     
@@ -60,18 +56,17 @@ exports.updatePost = async (req, res) => {
     }
 
     // Verificar se o usuário é o autor do post
-    if (post.author.toString() !== req.user._id.toString()) {
+    if (post.author !== req.user.id) {
       return res.status(403).json({ message: 'Não autorizado' });
     }
 
-    post.content = content;
-    if (images.length > 0) {
-      post.images = images;
-    }
-    post.updatedAt = Date.now();
+    const updates = {
+      content,
+      ...(images && { images })
+    };
 
-    await post.save();
-    res.json(post);
+    const updatedPost = await Post.update(req.params.id, updates);
+    res.json(updatedPost);
   } catch (error) {
     res.status(500).json({ message: 'Erro ao atualizar post', error: error.message });
   }
@@ -87,11 +82,11 @@ exports.deletePost = async (req, res) => {
     }
 
     // Verificar se o usuário é o autor do post
-    if (post.author.toString() !== req.user._id.toString()) {
+    if (post.author !== req.user.id) {
       return res.status(403).json({ message: 'Não autorizado' });
     }
 
-    await post.remove();
+    await Post.delete(req.params.id);
     res.json({ message: 'Post deletado com sucesso' });
   } catch (error) {
     res.status(500).json({ message: 'Erro ao deletar post', error: error.message });

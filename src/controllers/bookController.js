@@ -1,118 +1,119 @@
 const Book = require('../models/Books');
+const Place = require('../models/Places');
+const User = require('../models/User');
 
-// Criar um novo agendamento
+// Criar uma nova reserva
 exports.createBook = async (req, res) => {
     try {
-        const { placeName, dateHour, address } = req.body;
-        
-        const book = new Book({
-            id: Date.now().toString(), // Gerando um ID único baseado no timestamp
-            placeName,
+        const { placeId, dateHour, address } = req.body;
+
+        // Verificar se o lugar existe
+        const place = await Place.findById(placeId);
+        if (!place) {
+            return res.status(404).json({ message: 'Lugar não encontrado' });
+        }
+
+        const book = await Book.create({
+            placeId,
             dateHour,
-            username: req.user._id, // Assumindo que o usuário está autenticado
             address,
+            username: req.user.id,
             status: 'pending'
         });
 
-        await book.save();
-        
-        // Populando os dados do lugar e do usuário
-        await book.populate('placeName', 'name');
-        await book.populate('username', 'name');
-        
         res.status(201).json(book);
     } catch (error) {
-        res.status(500).json({ message: 'Erro ao criar agendamento', error: error.message });
+        res.status(500).json({ message: 'Erro ao criar reserva', error: error.message });
     }
 };
 
-// Buscar todos os agendamentos
+// Buscar todas as reservas
 exports.getBooks = async (req, res) => {
     try {
-        const books = await Book.find()
-            .populate('placeName', 'name')
-            .populate('username', 'name')
-            .sort({ dateHour: 1 });
-        res.json(books);
+        const books = await Book.findAll();
+        
+        // Enriquecer os dados com informações do lugar e usuário
+        const enrichedBooks = await Promise.all(books.map(async (book) => {
+            const place = await Place.findById(book.placeId);
+            const user = await User.findById(book.username);
+            
+            return {
+                ...book,
+                place: place ? { id: place.id, name: place.name } : null,
+                user: user ? { id: user.id, name: user.name, email: user.email } : null
+            };
+        }));
+
+        res.json(enrichedBooks);
     } catch (error) {
-        res.status(500).json({ message: 'Erro ao buscar agendamentos', error: error.message });
+        res.status(500).json({ message: 'Erro ao buscar reservas', error: error.message });
     }
 };
 
-// Buscar agendamentos de um usuário específico
-exports.getUserBooks = async (req, res) => {
-    try {
-        const books = await Book.find({ username: req.user._id })
-            .populate('placeName', 'name')
-            .populate('username', 'name')
-            .sort({ dateHour: 1 });
-        res.json(books);
-    } catch (error) {
-        res.status(500).json({ message: 'Erro ao buscar agendamentos do usuário', error: error.message });
-    }
-};
-
-// Buscar um agendamento específico
+// Buscar uma reserva específica
 exports.getBook = async (req, res) => {
     try {
-        const book = await Book.findById(req.params.id)
-            .populate('placeName', 'name')
-            .populate('username', 'name');
-        
-        if (!book) {
-            return res.status(404).json({ message: 'Agendamento não encontrado' });
-        }
-        
-        res.json(book);
-    } catch (error) {
-        res.status(500).json({ message: 'Erro ao buscar agendamento', error: error.message });
-    }
-};
-
-// Atualizar status do agendamento
-exports.updateBookStatus = async (req, res) => {
-    try {
-        const { status } = req.body;
         const book = await Book.findById(req.params.id);
         
         if (!book) {
-            return res.status(404).json({ message: 'Agendamento não encontrado' });
+            return res.status(404).json({ message: 'Reserva não encontrada' });
         }
 
-        // Verificar se o usuário é o dono do agendamento ou admin
-        if (book.username.toString() !== req.user._id.toString()) {
-            return res.status(403).json({ message: 'Não autorizado' });
-        }
-
-        book.status = status;
-        await book.save();
+        // Enriquecer os dados com informações do lugar e usuário
+        const place = await Place.findById(book.placeId);
+        const user = await User.findById(book.username);
         
-        await book.populate('placeName', 'name');
-        await book.populate('username', 'name');
+        const enrichedBook = {
+            ...book,
+            place: place ? { id: place.id, name: place.name } : null,
+            user: user ? { id: user.id, name: user.name, email: user.email } : null
+        };
         
-        res.json(book);
+        res.json(enrichedBook);
     } catch (error) {
-        res.status(500).json({ message: 'Erro ao atualizar status do agendamento', error: error.message });
+        res.status(500).json({ message: 'Erro ao buscar reserva', error: error.message });
     }
 };
 
-// Deletar um agendamento
+// Atualizar status da reserva
+exports.updateBookStatus = async (req, res) => {
+    try {
+        const { status } = req.body;
+
+        if (!['pending', 'approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ message: 'Status inválido' });
+        }
+
+        const book = await Book.findById(req.params.id);
+        
+        if (!book) {
+            return res.status(404).json({ message: 'Reserva não encontrada' });
+        }
+
+        const updatedBook = await Book.update(req.params.id, { status });
+        res.json(updatedBook);
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao atualizar status da reserva', error: error.message });
+    }
+};
+
+// Deletar uma reserva
 exports.deleteBook = async (req, res) => {
     try {
         const book = await Book.findById(req.params.id);
         
         if (!book) {
-            return res.status(404).json({ message: 'Agendamento não encontrado' });
+            return res.status(404).json({ message: 'Reserva não encontrada' });
         }
 
-        // Verificar se o usuário é o dono do agendamento
-        if (book.username.toString() !== req.user._id.toString()) {
+        // Verificar se o usuário é o dono da reserva
+        if (book.username !== req.user.id) {
             return res.status(403).json({ message: 'Não autorizado' });
         }
 
-        await book.deleteOne();
-        res.json({ message: 'Agendamento deletado com sucesso' });
+        await Book.delete(req.params.id);
+        res.json({ message: 'Reserva deletada com sucesso' });
     } catch (error) {
-        res.status(500).json({ message: 'Erro ao deletar agendamento', error: error.message });
+        res.status(500).json({ message: 'Erro ao deletar reserva', error: error.message });
     }
 }; 

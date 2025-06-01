@@ -1,27 +1,90 @@
-const mongoose = require('mongoose');
+const { v4: uuidv4 } = require('uuid');
+const docClient = require('../config/dynamodb');
 
-const postSchema = new mongoose.Schema({
-  content: {
-    type: Object, // Para armazenar o conteúdo do draft-js
-    required: true
-  },
-  images: [{
-    type: String, // URLs das imagens no S3
-    required: false
-  }],
-  author: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-});
+const TABLE_NAME = 'Posts';
 
-module.exports = mongoose.model('Post', postSchema); 
+class Post {
+    static async create(postData) {
+        const post = {
+            id: uuidv4(),
+            ...postData,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        await docClient.put({
+            TableName: TABLE_NAME,
+            Item: post
+        });
+
+        return post;
+    }
+
+    static async findById(id) {
+        const result = await docClient.get({
+            TableName: TABLE_NAME,
+            Key: { id }
+        });
+
+        return result.Item;
+    }
+
+    static async findByAuthor(authorId) {
+        const result = await docClient.query({
+            TableName: TABLE_NAME,
+            IndexName: 'AuthorIndex',
+            KeyConditionExpression: 'author = :author',
+            ExpressionAttributeValues: {
+                ':author': authorId
+            }
+        });
+
+        return result.Items;
+    }
+
+    static async findAll() {
+        const result = await docClient.scan({
+            TableName: TABLE_NAME
+        });
+
+        return result.Items;
+    }
+
+    static async update(id, updates) {
+        const updateExpressions = [];
+        const expressionAttributeNames = {};
+        const expressionAttributeValues = {};
+
+        Object.entries(updates).forEach(([key, value]) => {
+            if (key !== 'id') {
+                updateExpressions.push(`#${key} = :${key}`);
+                expressionAttributeNames[`#${key}`] = key;
+                expressionAttributeValues[`:${key}`] = value;
+            }
+        });
+
+        updateExpressions.push('#updatedAt = :updatedAt');
+        expressionAttributeNames['#updatedAt'] = 'updatedAt';
+        expressionAttributeValues[':updatedAt'] = new Date().toISOString();
+
+        const result = await docClient.update({
+            TableName: TABLE_NAME,
+            Key: { id },
+            UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+            ExpressionAttributeNames: expressionAttributeNames,
+            ExpressionAttributeValues: expressionAttributeValues,
+            ReturnValues: 'ALL_NEW'
+        });
+
+        return result.Attributes;
+    }
+
+    static async delete(id) {
+        await docClient.delete({
+            TableName: TABLE_NAME,
+            Key: { id }
+        });
+    }
+}
+
+module.exports = Post; 
