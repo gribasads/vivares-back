@@ -24,20 +24,16 @@ app.use((err, req, res, next) => {
     res.status(500).json({ message: 'Algo deu errado!' });
 });
 
-// Porta do servidor
+// Conectar ao MongoDB
+connectDB().catch(console.error);
+
+// Configuração da porta
 const PORT = process.env.PORT || 3000;
 
-// Conectar ao MongoDB e iniciar o servidor
-const startServer = async () => {
-    try {
-        await connectDB();
-        app.listen(PORT, () => {
-            console.log(`Servidor rodando na porta ${PORT}`);
-        });
-    } catch (error) {
-        console.error('Erro ao iniciar o servidor:', error);
-        process.exit(1);
-    }
-};
+// Iniciar o servidor
+app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+});
 
-startServer(); 
+// Exportar o app para a Vercel
+module.exports = app; 
