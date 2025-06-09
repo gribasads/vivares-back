@@ -18,16 +18,20 @@ module.exports = async (req, res) => {
         // Conectar ao banco de dados
         await connectDB();
 
+        // Extrair o ID da URL se existir
+        const id = req.query.id || req.url.split('/').pop();
+
         switch (req.method) {
             case 'GET':
-                if (req.query.id) {
+                if (id && id !== 'users') {
+                    req.params = { id };
                     await userController.getUser(req, res);
                 } else {
                     await userController.getUsers(req, res);
                 }
                 break;
             case 'POST':
-                if (req.path === '/api/users/update-name') {
+                if (req.url.includes('update-name')) {
                     await userController.updateUserName(req, res);
                 } else {
                     res.status(404).json({ message: 'Rota não encontrada' });

@@ -20,9 +20,9 @@ module.exports = async (req, res) => {
 
         switch (req.method) {
             case 'POST':
-                if (req.path === '/api/auth/request-code') {
+                if (req.url.includes('request-code')) {
                     await userController.requestVerificationCode(req, res);
-                } else if (req.path === '/api/auth/verify-code') {
+                } else if (req.url.includes('verify-code')) {
                     await userController.verifyCode(req, res);
                 } else {
                     res.status(404).json({ message: 'Rota não encontrada' });
